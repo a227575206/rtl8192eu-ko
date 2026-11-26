@@ -1,0 +1,36 @@
+name: build-8192eu
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    # 用 20.04 容器：gcc 9.4 编 4.9 内核的 scripts 比 gcc 11 稳
+    runs-on: ubuntu-22.04
+    container: ubuntu:20.04
+    timeout-minutes: 60
+
+    steps:
+      - name: 取出仓库文件
+        uses: actions/checkout@v4
+
+      - name: 安装编译依赖
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq \
+            build-essential bc bison flex libssl-dev xz-utils \
+            gcc-arm-linux-gnueabihf git curl ca-certificates kmod python3
+
+      - name: 编译驱动
+        run: bash scripts/build.sh
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: rtl8192eu-ko
+          path: out/*.ko
+          if-no-files-found: error
+          retention-days: 30
