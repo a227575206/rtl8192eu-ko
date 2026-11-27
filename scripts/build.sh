@@ -13,6 +13,13 @@ set -euo pipefail
 
 KVER=4.9.113
 UTSRELEASE="4.9.y"          # 必须与真机 vermagic 首段完全一致
+# 内核源码改用 Amlogic BSP 而非 kernel.org 主线。
+# 原因：真机是创维定制的 Amlogic 4.9，把 4.20 的 net_device 改动回移了
+# （dev_addr 从指针变成内联数组），主线 4.9 的头文件编出来的模块一加载
+# 就在 rtw_os_ndev_register 里往 0x0 写而 panic。
+# CoreELEC 的 amlogic-4.9-20 是跑 S905 盒子的 Amlogic BSP，backport 情况最接近。
+K_GIT="https://github.com/CoreELEC/linux-amlogic.git"
+K_BRANCH="amlogic-4.9-20"
 # 驱动源码候选地址（按兼容性排序，逐个尝试）
 DRV_URLS="https://github.com/Mange/rtl8192eu-linux-driver.git https://github.com/clnhub/rtl8192eu-linux.git"
 # 固定到 2019-05-30 的版本：那是支持 4.4~5.2 内核的 Realtek 官方代码。
@@ -46,14 +53,14 @@ python3 --version || true
 echo "并行度: $JOBS"
 
 # ---------- 1. 取内核源码 ----------
-step "获取 Linux $KVER 源码"
+step "获取 Amlogic BSP 4.9 内核源码"
 if [ ! -d "$KDIR" ]; then
-    curl -fL --retry 3 --retry-delay 5 -o "$ROOT/linux.tar.xz" \
-        "https://cdn.kernel.org/pub/linux/kernel/v4.x/linux-$KVER.tar.xz" \
-        || die "内核源码下载失败"
-    tar -xJf "$ROOT/linux.tar.xz" -C "$ROOT" || die "内核源码解压失败"
+    echo "克隆 $K_GIT ($K_BRANCH)，仓库较大需要几分钟"
+    git clone --depth 1 -b "$K_BRANCH" "$K_GIT" "$KDIR" 2>&1 | tail -5 \
+        || die "内核源码克隆失败"
 fi
 [ -f "$KDIR/Makefile" ] || die "内核源码目录异常: $KDIR"
+echo "内核版本标记: $(grep -E '^(VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION) =' "$KDIR/Makefile" | tr '\n' ' ')"
 
 # ---------- 2. 应用真机配置 ----------
 step "应用真机 .config"
