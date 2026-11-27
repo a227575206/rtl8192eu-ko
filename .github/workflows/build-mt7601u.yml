@@ -1,0 +1,42 @@
+name: build-mt7601u
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'scripts/build_mt7601u.sh'
+      - '.github/workflows/build-mt7601u.yml'
+      - 'config/**'
+      - 'scripts/check_versions.py'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    container: ubuntu:20.04
+    timeout-minutes: 90
+
+    steps:
+      - name: 取出仓库文件
+        uses: actions/checkout@v4
+
+      - name: 安装编译依赖
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq \
+            build-essential bc bison flex libssl-dev xz-utils \
+            gcc-arm-linux-gnueabihf git curl ca-certificates kmod python3
+
+      - name: 编译 mt7601u 驱动
+        run: bash scripts/build_mt7601u.sh
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: mt7601u-ko
+          path: |
+            out_mt7601u/*.ko
+            out_mt7601u/mt7601u.bin
+          if-no-files-found: error
+          retention-days: 30
