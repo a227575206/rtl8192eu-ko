@@ -131,6 +131,11 @@ s = open(p).read()
 orig = s
 s = s.replace('SET_IEEE80211_DEV(hw, dev->dev);',
               '/* patched: skip wiphy->dev.parent offset mismatch */')
+# 真机 Amlogic 内核的 wiphy->bands 比编译头里靠前 4 字节：
+# 写 bands[0] 会落到内核眼中的 bands[1]（5GHz），导致 2.4G 扫描结果全被丢。
+# 改写前一格，让内核看到正确的 Band 1（2.4GHz）。
+s = s.replace('dev->hw->wiphy->bands[NL80211_BAND_2GHZ] = dev->sband_2g;',
+              '(&dev->hw->wiphy->bands[0])[-1] = dev->sband_2g; /* patched: shift bands one slot back */')
 open(p,'w').write(s)
 print("init.c parent write patched:", s != orig)
 INITPATCH
