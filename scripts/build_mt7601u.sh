@@ -129,28 +129,48 @@ step "补丁：修复 TX 路径 control->vif 偏移不兼容导致的 scan panic
 # 修复：TX 路径忽略 control.vif，只用 control.sta（sta 为 NULL 时用 mon_wcid），
 #       并跳过依赖 vif 的 ieee80211_get_tx_rates()，用 wcid 默认速率。
 python3 - "$DRVDIR/tx.c" <<'TXPATCH'
-import sys, re
+import sys
 p = sys.argv[1]
 s = open(p).read()
 orig = s
-# 1) 忽略 info->control.vif（TX 主函数）
+# 1) 忽略 info->control.vif（TX 主函数），传 NULL 给内核函数
 s = s.replace(
     'struct ieee80211_vif *vif = info->control.vif;',
     'struct ieee80211_vif *vif = NULL; /* patched: control.vif offset mismatch */'
 )
-# 2) push_txwi 里跳过 ieee80211_get_tx_rates(vif,...) —— 用正则匹配任意空白
-s = re.sub(
-    r'if \(!wcid->tx_rate_set\)\s*ieee80211_get_tx_rates\([^;]*\);',
-    '/* patched: skip ieee80211_get_tx_rates (control.vif mismatch) */',
-    s
-)
-# 3) 兜底：把源码里剩余所有 info->control.vif 访问都改成 NULL（防止遗漏）
-s = s.replace('info->control.vif', 'NULL')
+# 2) 兜底：跳过 ieee80211_get_tx_rates（它内部会读 vif 且依赖 tx_info 布局）
+s = s.replace('ieee80211_get_tx_rates(info->control.vif, sta, skb, info->control.rates, 1);',
+              '/* patched: skip get_tx_rates */ info->control.rates[0].idx = 0; info->control.rates[0].count = 1; info->control.rates[0].flags = 0;')
+s = s.replace('ieee80211_get_tx_rates(NULL, sta, skb, info->control.rates, 1);',
+              '/* patched: skip get_tx_rates */ info->control.rates[0].idx = 0; info->control.rates[0].count = 1; info->control.rates[0].flags = 0;')
+# 3) 强制 tx_rate_set，走 wcid 默认速率，避免任何 rate 表访问
+s = s.replace('if (!wcid->tx_rate_set)', 'if (0) /* patched: force skip rate calc */')
 open(p,'w').write(s)
 print("tx.c patched:", s != orig)
-print("  vif=NULL:", 'vif = NULL; /* patched' in s)
-print("  remaining control.vif:", s.count('info->control.vif'))
 TXPATCH
+
+step "补丁：mt76_mac_tx_rate_val 用固定速率绕过 wiphy->bands 偏移不匹配"
+python3 - "$DRVDIR/mac.c" <<'MACPATCH'
+import sys, re
+p = sys.argv[1]
+s = open(p).read()
+orig = s
+# 崩溃点：r = &dev->hw->wiphy->bands[band]->bitrates[rate->idx]（内核 wiphy 布局不匹配）
+# 完全重写 else 分支，用固定 CCK 11M 速率值，不碰任何内核 band/bitrate 结构
+old = re.compile(
+    r'else \{\s*const struct ieee80211_rate \*r;.*?phy = val >> 8;\s*rate_idx = val & 0xff;\s*bw = 0;\s*\}',
+    re.S
+)
+new = ('else {\n'
+       '\t\t/* patched: avoid wiphy->bands offset mismatch -> fixed CCK 11Mbps */\n'
+       '\t\tphy = MT_PHY_TYPE_CCK;\n'
+       '\t\trate_idx = 1;\n'
+       '\t\tbw = 0;\n'
+       '\t}')
+s2 = old.sub(new, s)
+print("mac.c else-branch replaced:", s2 != s)
+open(p,'w').write(s2)
+MACPATCH
 
 step "编译 mt7601u.ko"
 mkdir -p "$OUT"
