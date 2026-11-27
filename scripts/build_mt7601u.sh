@@ -123,6 +123,35 @@ void mt7601u_init_debugfs(struct mt7601u_dev *dev) { }
 DBGEOF
 echo "debugfs.c 已替换为空初始化函数"
 
+step "补丁：修复 TX 路径 control->vif 偏移不兼容导致的 scan panic"
+# 崩溃栈：mt7601u_tx -> ieee80211_send_probe_req 时解引用无效指针 panic。
+# 根因：info->control.vif 在本模块与真机 Amlogic 内核的 ieee80211_tx_info 布局偏移不一致。
+# 修复：TX 路径忽略 control.vif，只用 control.sta（sta 为 NULL 时用 mon_wcid），
+#       并跳过依赖 vif 的 ieee80211_get_tx_rates()，用 wcid 默认速率。
+python3 - "$DRVDIR/tx.c" <<'TXPATCH'
+import sys, re
+p = sys.argv[1]
+s = open(p).read()
+orig = s
+# 1) 忽略 info->control.vif（TX 主函数）
+s = s.replace(
+    'struct ieee80211_vif *vif = info->control.vif;',
+    'struct ieee80211_vif *vif = NULL; /* patched: control.vif offset mismatch */'
+)
+# 2) push_txwi 里跳过 ieee80211_get_tx_rates(vif,...) —— 用正则匹配任意空白
+s = re.sub(
+    r'if \(!wcid->tx_rate_set\)\s*ieee80211_get_tx_rates\([^;]*\);',
+    '/* patched: skip ieee80211_get_tx_rates (control.vif mismatch) */',
+    s
+)
+# 3) 兜底：把源码里剩余所有 info->control.vif 访问都改成 NULL（防止遗漏）
+s = s.replace('info->control.vif', 'NULL')
+open(p,'w').write(s)
+print("tx.c patched:", s != orig)
+print("  vif=NULL:", 'vif = NULL; /* patched' in s)
+print("  remaining control.vif:", s.count('info->control.vif'))
+TXPATCH
+
 step "编译 mt7601u.ko"
 mkdir -p "$OUT"
 DRV_CFLAGS="-fno-stack-protector -include $COMPAT"
