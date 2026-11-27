@@ -13,7 +13,8 @@ set -euo pipefail
 
 KVER=4.9.113
 UTSRELEASE="4.9.y"          # 必须与真机 vermagic 首段完全一致
-DRV_URL="https://github.com/lwfinger/rtl8192eu-linux-driver.git"
+# 驱动源码候选地址（按兼容性排序，逐个尝试）
+DRV_URLS="https://github.com/Mange/rtl8192eu-linux-driver.git https://github.com/clnhub/rtl8192eu-linux.git"
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 KDIR="$ROOT/linux-$KVER"
@@ -84,9 +85,21 @@ cat "$KDIR/include/generated/utsrelease.h"
 # ---------- 5. 取驱动源码 ----------
 step "获取 rtl8192eu 驱动源码"
 if [ ! -d "$DRVDIR/.git" ]; then
-    git clone --depth 1 "$DRV_URL" "$DRVDIR" || die "驱动源码克隆失败"
+    cloned=0
+    for u in $DRV_URLS; do
+        echo "尝试: $u"
+        rm -rf "$DRVDIR"
+        if git clone --depth 1 "$u" "$DRVDIR" 2>&1; then
+            cloned=1
+            break
+        fi
+        echo "  失败，换下一个源"
+    done
+    [ "$cloned" = 1 ] || die "所有驱动源码仓库均克隆失败"
 fi
 git -C "$DRVDIR" log -1 --format='commit %h  %ad  %s' --date=short
+echo "源码目录内容:"
+ls "$DRVDIR" | head -20
 
 # ---------- 6. 编译 ----------
 step "编译 8192eu.ko"
