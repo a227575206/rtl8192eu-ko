@@ -113,7 +113,7 @@ if [ ! -d "$DRVDIR/.git" ]; then
 fi
 git -C "$DRVDIR" log -1 --format='commit %h  %ad  %s' --date=short
 echo "源码目录内容:"
-ls "$DRVDIR" | head -20
+ls "$DRVDIR" | head -20 || true
 
 # 驱动的 Makefile 末尾有一行 EXTRA_CFLAGS += $(ccflags-y)，
 # 与内核 scripts/Makefile.lib 里的 ccflags-y += $(EXTRA_CFLAGS) 互为引用。
@@ -130,7 +130,9 @@ new, n = re.subn(r'(?m)^(\s*EXTRA_CFLAGS\s*\+=\s*\$\(ccflags-y\)\s*)$',
 open(p, 'w', encoding='utf-8').write(new)
 print('  已注释 %d 处 EXTRA_CFLAGS += $(ccflags-y)' % n)
 PATCHEOF
-grep -n 'disabled-by-buildsh' "$DRVDIR/Makefile" | head -3
+# 注意结尾必须有 || true：老版本没有这一行时 grep 返回 1，
+# 在 set -e 下会直接终止脚本（第 7 轮就是这么失败的）。
+grep -n 'disabled-by-buildsh' "$DRVDIR/Makefile" | head -3 || true
 
 # ---------- 5.5 老内核兼容层 ----------
 # 驱动代码按 6.x/7.x 内核维护，用到 5.0 才引入的 strscpy，4.9 内核没有。
