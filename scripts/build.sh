@@ -28,12 +28,16 @@ JOBS=${JOBS:-$(nproc)}
 
 step() { printf '\n\033[1;36m==== %s ====\033[0m\n' "$*"; }
 die()  { printf '\n\033[1;31m[FAIL] %s\033[0m\n' "$*" >&2; exit 1; }
+# 出错时打印行号，便于远程排查
+trap 'printf "\n\033[1;31m[ERROR] 第 %s 行执行失败，退出码 %s\033[0m\n" "$LINENO" "$?" >&2' ERR
 
 # ---------- 0. 环境自检 ----------
+# 注意: 这里不能用 `| head -1`。head 读完即退出会让左侧命令收到 SIGPIPE，
+# 配合 set -o pipefail 会被判定为失败，导致脚本在自检阶段就退出。
 step "环境自检"
-${CROSS_COMPILE}gcc --version | head -1
-make --version | head -1
-python3 --version
+${CROSS_COMPILE}gcc --version 2>&1 | sed -n 1p || true
+make --version 2>&1 | sed -n 1p || true
+python3 --version || true
 echo "并行度: $JOBS"
 
 # ---------- 1. 取内核源码 ----------
