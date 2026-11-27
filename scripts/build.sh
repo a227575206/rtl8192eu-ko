@@ -105,8 +105,13 @@ ls "$DRVDIR" | head -20
 step "编译 8192eu.ko"
 mkdir -p "$OUT"
 set +e
-make -C "$KDIR" M="$DRVDIR" ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE \
-     modules -j"$JOBS" 2>&1 | tee "$ROOT/build.log"
+# 必须走驱动自己的 modules 目标，不能直接 make -C $KDIR M=$DRVDIR。
+# 原因：它的 Kbuild 分支写的是 obj-$(CONFIG_RTL8192EU) := $(MODULE_NAME).o，
+# 而 CONFIG_RTL8192EU=m 只在 Makefile 的 else 分支（非 KERNELRELEASE）里 export，
+# 再递归调用 make -C $(KSRC) M=$(pwd)。绕过这一层的话该变量为空，
+# obj- 展开成空，结果就是 "MODPOST 0 modules"、没有任何 .ko 产出。
+make -C "$DRVDIR" ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE \
+     KSRC="$KDIR" CONFIG_RTL8192EU=m modules -j"$JOBS" 2>&1 | tee "$ROOT/build.log"
 RC=${PIPESTATUS[0]}
 set -e
 if [ "$RC" -ne 0 ]; then
