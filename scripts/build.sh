@@ -15,6 +15,10 @@ KVER=4.9.113
 UTSRELEASE="4.9.y"          # 必须与真机 vermagic 首段完全一致
 # 驱动源码候选地址（按兼容性排序，逐个尝试）
 DRV_URLS="https://github.com/Mange/rtl8192eu-linux-driver.git https://github.com/clnhub/rtl8192eu-linux.git"
+# 固定到 2019-05-30 的版本：那是支持 4.4~5.2 内核的 Realtek 官方代码。
+# 仓库最新代码已按 6.x/7.x 维护，在 4.9 上能编过但会在
+# rtw_os_ndevs_init 里因结构体布局不一致而内核崩溃。
+DRV_COMMIT="de76ef8e49e6363d4fbd0e28e68fc326dbb3854c"
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 KDIR="$ROOT/linux-$KVER"
@@ -96,6 +100,16 @@ if [ ! -d "$DRVDIR/.git" ]; then
         echo "  失败，换下一个源"
     done
     [ "$cloned" = 1 ] || die "所有驱动源码仓库均克隆失败"
+    # 切到与 4.9 内核同期的版本
+    if [ -n "$DRV_COMMIT" ]; then
+        echo "切换到 $DRV_COMMIT"
+        if git -C "$DRVDIR" fetch --depth 1 origin "$DRV_COMMIT" 2>&1 \
+           && git -C "$DRVDIR" checkout -q "$DRV_COMMIT"; then
+            echo "已切到指定版本"
+        else
+            die "无法切换到指定版本 $DRV_COMMIT"
+        fi
+    fi
 fi
 git -C "$DRVDIR" log -1 --format='commit %h  %ad  %s' --date=short
 echo "源码目录内容:"
