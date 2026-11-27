@@ -44,20 +44,13 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: 推送产物到 mt7601u-out 分支
-        run: |
-          git config user.name "ci-bot"
-          git config user.email "ci-bot@users.noreply.github.com"
-          mkdir -p /tmp/mt-out
-          cp out_mt7601u/*.ko /tmp/mt-out/ 2>/dev/null || true
-          cp out_mt7601u/*.bin /tmp/mt-out/ 2>/dev/null || true
-          cp build_mt7601u.log /tmp/mt-out/ 2>/dev/null || true
-          git checkout --orphan mt7601u-out
-          git rm -rf --cached . >/dev/null 2>&1 || true
-          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} + 2>/dev/null || true
-          cp /tmp/mt-out/* .
-          git add -A
-          git commit -m "mt7601u build output" || true
-          git push -f origin mt7601u-out
-          echo "=== pushed files ==="
-          ls -lh
+      - name: 发布 Release（公开仓库可匿名下载）
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: mt7601u-latest
+          name: mt7601u driver build
+          body: 主线 mt7601u 驱动，适配 E900V22D / 腾讯全民WiFi 2a5f:1000
+          files: |
+            out_mt7601u/*.ko
+            out_mt7601u/mt7601u.bin
+          fail_on_unmatched_files: false
