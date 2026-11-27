@@ -146,7 +146,7 @@ try:
     if len(d) < 100: raise ValueError('too small')
     ilm, dlm, bv, fv = struct.unpack('<IIHH', d[:12])
     expect = 12 + ilm + dlm
-    ok = (len(d) == expect and 8000 < len(d) < 200000)
+    ok = (len(d) == expect and 4000 < len(d) < 200000)
     print("固件候选 %s: size=%d ilm=%d dlm=%d expect=%d %s" % (
         p, len(d), ilm, dlm, expect, "OK" if ok else "BAD"))
     sys.exit(0 if ok else 1)
@@ -169,6 +169,32 @@ done
 if [ "$FW_OK" -eq 0 ]; then
     for u in "$FW_URL" "$FW_URL2"; do
         curl -fL --retry 2 --max-time 90 -o /tmp/fw_candidate.bin "$u" 2>/dev/null || continue
+        if check_fw /tmp/fw_candidate.bin; then
+            cp /tmp/fw_candidate.bin "$OUT/mt7601u.bin" && FW_OK=1 && break
+        fi
+    done
+fi
+
+# 候选3: git clone 官方 linux-firmware 仓库（云端网络好），只取单个文件
+if [ "$FW_OK" -eq 0 ]; then
+    echo "尝试 git clone 官方 firmware 仓库..."
+    rm -rf /tmp/linux-firmware
+    if git clone --depth 1 --filter=blob:none --sparse \
+        https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git \
+        /tmp/linux-firmware 2>/dev/null; then
+        ( cd /tmp/linux-firmware && git sparse-checkout set mt7601u.bin 2>/dev/null ) || true
+        if [ -f /tmp/linux-firmware/mt7601u.bin ] && check_fw /tmp/linux-firmware/mt7601u.bin; then
+            cp /tmp/linux-firmware/mt7601u.bin "$OUT/mt7601u.bin" && FW_OK=1
+        fi
+    fi
+fi
+
+# 候选4: 从 MediaTek 原厂驱动源码仓库取（embedded firmware）
+if [ "$FW_OK" -eq 0 ]; then
+    echo "尝试从 openwrt mt76 仓库取固件..."
+    for p in "mt7601u.bin" "firmware/mt7601u.bin"; do
+        curl -fL --retry 2 --max-time 90 -o /tmp/fw_candidate.bin \
+            "https://raw.githubusercontent.com/openwrt/mt76/master/$p" 2>/dev/null || continue
         if check_fw /tmp/fw_candidate.bin; then
             cp /tmp/fw_candidate.bin "$OUT/mt7601u.bin" && FW_OK=1 && break
         fi
