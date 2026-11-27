@@ -175,6 +175,35 @@ static inline ssize_t __kcompat_strscpy(char *dest, const char *src, size_t coun
 EOF
 echo "兼容头: $COMPAT"
 
+# ---------- 5.6 修正 cfg80211 连接通知接口 ----------
+# Amlogic BSP 在 CONFIG_AMLOGIC_MODIFY 下把 cfg80211_connect_bss 改成了
+# static inline，内部调用 5.0 才有的 cfg80211_connect_done。而真机内核导出
+# 的是真正的 cfg80211_connect_bss 函数（kallsyms 有，connect_done 没有），
+# 所以要让头文件走 #else 分支，按外部函数声明。
+step "修正 cfg80211_connect_bss 声明"
+python3 - "$KDIR/include/net/cfg80211.h" <<'CFGPATCH'
+import sys, re
+p = sys.argv[1]
+src = open(p, encoding='utf-8', errors='replace').read()
+if 'patched-by-buildsh' in src:
+    print('  已打过补丁，跳过')
+    sys.exit(0)
+pat = re.compile(r'#ifdef CONFIG_AMLOGIC_MODIFY\s*\nstatic inline void\s*\n'
+                 r'cfg80211_connect_bss.*?#endif', re.S)
+repl = ('/* patched-by-buildsh: 真机内核导出的是真正的 cfg80211_connect_bss 函数，\n'
+        '   Amlogic 的 inline 版本内部调用了真机不存在的 cfg80211_connect_done */\n'
+        'void cfg80211_connect_bss(struct net_device *dev, const u8 *bssid,\n'
+        '\t\t     struct cfg80211_bss *bss, const u8 *req_ie,\n'
+        '\t\t     size_t req_ie_len, const u8 *resp_ie,\n'
+        '\t\t     size_t resp_ie_len, int status, gfp_t gfp);')
+new, n = pat.subn(repl, src)
+open(p, 'w', encoding='utf-8').write(new)
+print('  已替换 %d 处' % n)
+if n == 0:
+    print('  [警告] 未匹配到目标代码，可能源码版本不同')
+CFGPATCH
+grep -c 'patched-by-buildsh' "$KDIR/include/net/cfg80211.h" || true
+
 # ---------- 6. 编译 ----------
 step "编译 8192eu.ko"
 mkdir -p "$OUT"
