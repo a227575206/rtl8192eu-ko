@@ -101,6 +101,23 @@ git -C "$DRVDIR" log -1 --format='commit %h  %ad  %s' --date=short
 echo "源码目录内容:"
 ls "$DRVDIR" | head -20
 
+# 驱动的 Makefile 末尾有一行 EXTRA_CFLAGS += $(ccflags-y)，
+# 与内核 scripts/Makefile.lib 里的 ccflags-y += $(EXTRA_CFLAGS) 互为引用。
+# 编译阶段只 include 一次不报错，但 stage 2 重新 include 时会抛
+# "Recursive variable 'ccflags-y' references itself"，导致 .ko 链接不出来。
+# 所有编译选项本来就都在 ccflags-y 里，注释掉这行不影响编译结果。
+step "修补驱动 Makefile 中的循环引用"
+python3 - "$DRVDIR/Makefile" <<'PATCHEOF'
+import sys, re
+p = sys.argv[1]
+src = open(p, encoding='utf-8', errors='replace').read()
+new, n = re.subn(r'(?m)^(\s*EXTRA_CFLAGS\s*\+=\s*\$\(ccflags-y\)\s*)$',
+                 r'# disabled-by-buildsh: \1', src)
+open(p, 'w', encoding='utf-8').write(new)
+print('  已注释 %d 处 EXTRA_CFLAGS += $(ccflags-y)' % n)
+PATCHEOF
+grep -n 'disabled-by-buildsh' "$DRVDIR/Makefile" | head -3
+
 # ---------- 5.5 老内核兼容层 ----------
 # 驱动代码按 6.x/7.x 内核维护，用到 5.0 才引入的 strscpy，4.9 内核没有。
 # 用 -include 注入一个等价实现，避免逐个文件打补丁。
