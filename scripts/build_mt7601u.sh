@@ -113,6 +113,16 @@ static inline ssize_t __kcompat_strscpy(char *dest, const char *src, size_t coun
 EOF
 fi
 
+step "补丁：禁用 debugfs 初始化（Amlogic 内核 wiphy->debugfsdir 布局不兼容，会 panic）"
+# 崩溃栈证实：mt7601u_init_debugfs() -> debugfs_create_dir() -> down_write() 内核 panic。
+# 根因是本模块读 wiphy->debugfsdir 的偏移与真机内核不一致（Amlogic 改过 cfg80211）。
+# debugfs 仅调试用，替换为空函数即可绕过，不影响网卡功能。
+cat > "$DRVDIR/debugfs.c" <<'DBGEOF'
+#include "mt7601u.h"
+void mt7601u_init_debugfs(struct mt7601u_dev *dev) { }
+DBGEOF
+echo "debugfs.c 已替换为空初始化函数"
+
 step "编译 mt7601u.ko"
 mkdir -p "$OUT"
 DRV_CFLAGS="-fno-stack-protector -include $COMPAT"
@@ -189,7 +199,34 @@ if [ "$FW_OK" -eq 0 ]; then
     fi
 fi
 
-# 候选4: 从 MediaTek 原厂驱动源码仓库取（embedded firmware）
+# 候选4: OpenWrt 官方固件包（已验证可靠，国内可访问）
+if [ "$FW_OK" -eq 0 ]; then
+    echo "尝试 OpenWrt mt7601u-firmware ipk 包..."
+    OW_URL="https://downloads.openwrt.org/releases/23.05.5/packages/x86_64/base/mt7601u-firmware_20230804-1_x86_64.ipk"
+    if curl -fL --retry 2 --max-time 90 -o /tmp/mt76fw.ipk "$OW_URL" 2>/dev/null; then
+        rm -rf /tmp/mt76fw && mkdir -p /tmp/mt76fw
+        ( cd /tmp/mt76fw && tar -xzf /tmp/mt76fw.ipk 2>/dev/null && tar -xzf data.tar.gz 2>/dev/null ) || true
+        FWFILE=$(find /tmp/mt76fw -name 'mt7601u.bin' -type f 2>/dev/null | head -1)
+        if [ -n "$FWFILE" ]; then
+            # OpenWrt 固件尾部有对齐填充，校验用 ilm+dlm+12 容差 <= 64 字节
+            SZ=$(stat -c %s "$FWFILE")
+            python3 - "$FWFILE" <<'FWCK2'
+import sys, struct, os
+p=sys.argv[1]; d=open(p,'rb').read()
+ilm,dlm,bv,fv=struct.unpack('<IIHH',d[:12])
+expect=12+ilm+dlm
+print("OpenWrt 固件: size=%d expect=%d diff=%d" %(len(d),expect,len(d)-expect))
+ok = 4000 < len(d) < 200000 and 0 <= len(d)-expect <= 64
+sys.exit(0 if ok else 1)
+FWCK2
+            if [ $? -eq 0 ]; then
+                cp "$FWFILE" "$OUT/mt7601u.bin" && FW_OK=1
+            fi
+        fi
+    fi
+fi
+
+# 候选5: 从 MediaTek 原厂驱动源码仓库取（embedded firmware）
 if [ "$FW_OK" -eq 0 ]; then
     echo "尝试从 openwrt mt76 仓库取固件..."
     for p in "mt7601u.bin" "firmware/mt7601u.bin"; do
