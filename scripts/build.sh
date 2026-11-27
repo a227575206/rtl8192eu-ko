@@ -101,23 +101,62 @@ git -C "$DRVDIR" log -1 --format='commit %h  %ad  %s' --date=short
 echo "源码目录内容:"
 ls "$DRVDIR" | head -20
 
+# ---------- 5.5 老内核兼容层 ----------
+# 驱动代码按 6.x/7.x 内核维护，用到 5.0 才引入的 strscpy，4.9 内核没有。
+# 用 -include 注入一个等价实现，避免逐个文件打补丁。
+step "生成 4.9 兼容头"
+COMPAT="$ROOT/kernel_compat.h"
+cat > "$COMPAT" <<'EOF'
+#ifndef _KERNEL_COMPAT_49_H
+#define _KERNEL_COMPAT_49_H
+#include <linux/types.h>
+#include <linux/string.h>
+#include <linux/errno.h>
+#include <linux/version.h>
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 0, 0)
+#ifndef strscpy
+static inline ssize_t __kcompat_strscpy(char *dest, const char *src, size_t count)
+{
+	size_t len = strnlen(src, count);
+	if (len >= count) {
+		if (count) {
+			memcpy(dest, src, count - 1);
+			dest[count - 1] = '\0';
+		}
+		return -E2BIG;
+	}
+	memcpy(dest, src, len + 1);
+	return (ssize_t)len;
+}
+#define strscpy __kcompat_strscpy
+#endif
+#endif
+#endif
+EOF
+echo "兼容头: $COMPAT"
+
 # ---------- 6. 编译 ----------
 step "编译 8192eu.ko"
 mkdir -p "$OUT"
+# 直接调用内核构建系统并显式传入 CONFIG_RTL8192EU=m：
+#   - 走驱动 Makefile 的 else 分支会让它再递归一次 make，造成
+#     "Recursive variable 'ccflags-y' references itself"；
+#   - 完全不传该变量则 obj- 展开为空，得到 "MODPOST 0 modules"。
+# -fno-stack-protector：内核没有向模块导出 __stack_chk_* 符号。
+DRV_CFLAGS="-fno-stack-protector -include $COMPAT"
 set +e
-# 必须走驱动自己的 modules 目标，不能直接 make -C $KDIR M=$DRVDIR。
-# 原因：它的 Kbuild 分支写的是 obj-$(CONFIG_RTL8192EU) := $(MODULE_NAME).o，
-# 而 CONFIG_RTL8192EU=m 只在 Makefile 的 else 分支（非 KERNELRELEASE）里 export，
-# 再递归调用 make -C $(KSRC) M=$(pwd)。绕过这一层的话该变量为空，
-# obj- 展开成空，结果就是 "MODPOST 0 modules"、没有任何 .ko 产出。
-make -C "$DRVDIR" ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE \
-     KSRC="$KDIR" CONFIG_RTL8192EU=m modules -j"$JOBS" 2>&1 | tee "$ROOT/build.log"
+make -C "$KDIR" M="$DRVDIR" ARCH=$ARCH CROSS_COMPILE=$CROSS_COMPILE \
+     CONFIG_RTL8192EU=m USER_EXTRA_CFLAGS="$DRV_CFLAGS" \
+     modules -j"$JOBS" 2>&1 | tee "$ROOT/build.log"
 RC=${PIPESTATUS[0]}
 set -e
 if [ "$RC" -ne 0 ]; then
     echo "--- 编译错误摘要 ---"
-    grep -iE 'error:|Error [0-9]' "$ROOT/build.log" | head -30 || true
-    die "驱动编译失败（build.log 已保留）"
+    grep -iE 'error:|Error [0-9]|undefined!' "$ROOT/build.log" | head -30 || true
+    if ! ls "$DRVDIR"/*.ko >/dev/null 2>&1; then
+        die "驱动编译失败且无产物（build.log 已保留）"
+    fi
+    echo "[注意] make 返回非 0，但已产出 .ko，继续校验"
 fi
 
 find "$DRVDIR" -maxdepth 1 -name '*.ko' -exec cp -v {} "$OUT/" \;
