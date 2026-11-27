@@ -134,17 +134,44 @@ fi
 find "$DRVDIR" -maxdepth 1 -name '*.ko' -exec cp -v {} "$OUT/" \;
 [ -n "$(ls -A "$OUT" 2>/dev/null)" ] || die "没有产出 .ko"
 
-step "下载固件 mt7601u.bin"
+step "获取固件 mt7601u.bin"
 set +e
-curl -fL --retry 3 --max-time 120 -o "$OUT/mt7601u.bin" "$FW_URL" \
-    || curl -fL --retry 3 --max-time 120 -o "$OUT/mt7601u.bin" "$FW_URL2"
-FWRC=$?
-set -e
-if [ "$FWRC" -ne 0 ] || [ ! -s "$OUT/mt7601u.bin" ]; then
-    echo "[警告] 固件下载失败，驱动加载时会缺固件。继续上传 ko。"
-else
-    echo "固件大小: $(stat -c %s "$OUT/mt7601u.bin") 字节"
+# 优先从内核树内 firmware 目录找（部分 BSP 自带）
+find / -name 'mt7601u.bin' -type f 2>/dev/null | head -1 | while read f; do
+    cp "$f" "$OUT/mt7601u.bin" 2>/dev/null
+done
+# 没有则 apt 安装 linux-firmware（Ubuntu 20.04 包里确定包含 mt7601u.bin）
+if [ ! -s "$OUT/mt7601u.bin" ]; then
+    echo "尝试 apt 安装 linux-firmware ..."
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq 2>/dev/null
+    apt-get install -y -qq linux-firmware 2>&1 | tail -5
+    for d in /lib/firmware /usr/lib/firmware; do
+        [ -f "$d/mt7601u.bin" ] && cp "$d/mt7601u.bin" "$OUT/mt7601u.bin" && break
+    done
 fi
+# 最后再尝试网络下载
+if [ ! -s "$OUT/mt7601u.bin" ]; then
+    curl -fL --retry 3 --max-time 120 -o "$OUT/mt7601u.bin" "$FW_URL" \
+        || curl -fL --retry 3 --max-time 120 -o "$OUT/mt7601u.bin" "$FW_URL2"
+fi
+set -e
+if [ ! -s "$OUT/mt7601u.bin" ]; then
+    die "无法获取固件 mt7601u.bin"
+fi
+# 校验固件头（ilm_len + dlm_len + 12 == 文件大小）
+python3 - "$OUT/mt7601u.bin" <<'FWCHK'
+import sys, struct, os
+p = sys.argv[1]
+d = open(p,'rb').read()
+ilm, dlm, bv, fv = struct.unpack('<IIHH', d[:12])
+expect = 12 + ilm + dlm
+print("固件: size=%d ilm=%d dlm=%d expect=%d %s" % (
+    len(d), ilm, dlm, expect, "OK" if len(d)==expect else "BAD"))
+if len(d) != expect or len(d) < 8000:
+    os.remove(p)
+    sys.exit("固件格式校验失败，已删除")
+FWCHK
 
 step "校验产物"
 for ko in "$OUT"/*.ko; do
