@@ -123,6 +123,18 @@ void mt7601u_init_debugfs(struct mt7601u_dev *dev) { }
 DBGEOF
 echo "debugfs.c 已替换为空初始化函数"
 
+step "补丁：禁用 SET_IEEE80211_DEV（wiphy->dev.parent 偏移不匹配会写坏 wiphy 名字）"
+python3 - "$DRVDIR/init.c" <<'INITPATCH'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+orig = s
+s = s.replace('SET_IEEE80211_DEV(hw, dev->dev);',
+              '/* patched: skip wiphy->dev.parent offset mismatch */')
+open(p,'w').write(s)
+print("init.c parent write patched:", s != orig)
+INITPATCH
+
 step "补丁：修复 TX 路径 control->vif 偏移不兼容导致的 scan panic"
 # 崩溃栈：mt7601u_tx -> ieee80211_send_probe_req 时解引用无效指针 panic。
 # 根因：info->control.vif 在本模块与真机 Amlogic 内核的 ieee80211_tx_info 布局偏移不一致。
