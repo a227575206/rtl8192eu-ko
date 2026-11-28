@@ -1,0 +1,43 @@
+name: build-wpa-static
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - 'scripts/build_wpa_static.sh'
+      - '.github/workflows/build-wpa-static.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    container: ubuntu:20.04
+    timeout-minutes: 60
+
+    steps:
+      - name: 取出仓库文件
+        uses: actions/checkout@v4
+
+      - name: 安装编译依赖
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq \
+            build-essential gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
+            libssl-dev pkg-config curl ca-certificates file
+
+      - name: 编译静态 wpa_supplicant
+        run: bash scripts/build_wpa_static.sh
+
+      - name: 发布 Release（公开仓库可匿名下载）
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: wpa-static-latest
+          name: static wpa_supplicant for E900V22D
+          body: 静态链接、无 HIDL 依赖的 wpa_supplicant，替换盒子上崩溃的 Android HIDL 版
+          files: |
+            out_wpa/wpa_supplicant_static
+          fail_on_unmatched_files: false
