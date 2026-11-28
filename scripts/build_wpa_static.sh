@@ -43,9 +43,12 @@ cd wpa_supplicant/wpa_supplicant
 
 echo "=== 3. 生成 .config ==="
 cp defconfig .config
+# 关键：defconfig 默认开 DBus，必须彻底删除，否则缺 dbus.h 编译失败
+sed -i '/DBUS/d' .config
 cat >> .config <<'EOF'
 CONFIG_DRIVER_NL80211=y
 CONFIG_DRIVER_WEXT=n
+CONFIG_LIBNL32=y
 CONFIG_WPA=y
 CONFIG_IEEE80211W=y
 CONFIG_CTRL_IFACE=y
@@ -55,10 +58,14 @@ CONFIG_TLS=internal
 CONFIG_INTERNAL_LIBTOMMATH=y
 CONFIG_NO_LINUX_PACKET_SOCKET_WAR=y
 EOF
+echo "DBUS_LINES=$(grep -c DBUS .config)"
+echo "CONFIG_SUMMARY:"; grep -E "^CONFIG_(DRIVER|TLS|CTRL_IFACE|LIBNL)" .config
 
 echo "=== 4. 编译 ==="
-export CFLAGS="-O2 -march=armv7-a -I$PREFIX/include"
+export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH"
+export CFLAGS="-O2 -march=armv7-a -I$PREFIX/include -I$PREFIX/include/libnl3"
 export LDFLAGS="-static -static-libgcc -L$PREFIX/lib"
+export LIBS="-lnl-3 -lnl-genl-3"
 make CC=$CC -j4 > make.log 2>&1
 RC=$?
 echo "MAKE_RC=$RC"
