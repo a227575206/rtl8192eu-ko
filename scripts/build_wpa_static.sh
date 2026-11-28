@@ -112,7 +112,7 @@ if [ -f wpa_supplicant ]; then
   arm-linux-gnueabihf-strip wpa_supplicant
   ls -lh wpa_supplicant
   file wpa_supplicant
-  cp wpa_supplicant ../wpa_supplicant_static
+  cp wpa_supplicant ../../wpa_supplicant_static
   echo "BUILD_OK"
 else
   echo "BUILD_FAIL: no binary"

@@ -61,5 +61,5 @@ jobs:
           name: static wpa_supplicant for E900V22D
           body: 静态链接、无 HIDL 依赖的 wpa_supplicant，替换盒子上崩溃的 Android HIDL 版
           files: |
-            out_wpa/wpa_supplicant_static
+            out_wpa/wpa_supplicant/wpa_supplicant_static
           fail_on_unmatched_files: false
