@@ -30,6 +30,8 @@ jobs:
             libssl-dev pkg-config curl ca-certificates file automake autoconf libtool bison flex
 
       - name: 编译静态 wpa_supplicant
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash scripts/build_wpa_static.sh
 
       - name: 把日志塞进 Summary（无需权限即可查看）

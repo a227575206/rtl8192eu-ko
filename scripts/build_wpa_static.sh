@@ -64,6 +64,39 @@ RC=$?
 echo "MAKE_RC=$RC"
 tail -60 make.log
 grep -iE "error|undefined reference|No such file|cannot find|fatal error" make.log | tail -12 | while read -r L; do echo "::error::WPA_MAKE $L"; done
+# 把完整日志写进 Release body（curl 调 GitHub API，无需第三方 action）
+{
+  echo "BUILD FAILED - diagnostic log"
+  echo ""
+  echo '```'
+  echo "--- cfg.log ---"; tail -30 cfg.log 2>/dev/null
+  echo "--- mk.log ---"; tail -30 mk.log 2>/dev/null
+  echo "--- make.log ---"; tail -80 make.log 2>/dev/null
+  echo '```'
+} > /tmp/wpa_diag.txt 2>/dev/null || true
+if [ -n "$GITHUB_TOKEN" ]; then
+  python3 - <<'PY2'
+import json,os,urllib.request
+token=os.environ.get('GITHUB_TOKEN','')
+repo=os.environ.get('GITHUB_REPOSITORY','')
+body=open('/tmp/wpa_diag.txt').read() if os.path.exists('/tmp/wpa_diag.txt') else 'no log'
+data=json.dumps({'tag_name':'wpa-diag-latest','name':'wpa build diagnostic','body':body[:60000]}).encode()
+req=urllib.request.Request(f'https://api.github.com/repos/{repo}/releases',data=data,
+  headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','Content-Type':'application/json'})
+try:
+    r=urllib.request.urlopen(req,timeout=30); print('DIAG_RELEASE_OK',r.status)
+except Exception as e:
+    # tag 已存在则更新
+    try:
+        rr=urllib.request.urlopen(urllib.request.Request(f'https://api.github.com/repos/{repo}/releases/tags/wpa-diag-latest',
+          headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json'}),timeout=20)
+        rel=json.load(rr); rid=rel['id']
+        req2=urllib.request.Request(f'https://api.github.com/repos/{repo}/releases/{rid}',data=json.dumps({'body':body[:60000]}).encode(),
+          method='PATCH',headers={'Authorization':f'Bearer {token}','Accept':'application/vnd.github+json','Content-Type':'application/json'})
+        urllib.request.urlopen(req2,timeout=30); print('DIAG_UPDATE_OK')
+    except Exception as e2: print('DIAG_FAIL',e,e2)
+PY2
+fi
 
 echo "=== 5. 校验 ==="
 if [ -f wpa_supplicant ]; then
