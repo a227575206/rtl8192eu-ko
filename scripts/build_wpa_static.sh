@@ -45,6 +45,8 @@ echo "=== 3. 生成 .config ==="
 cp defconfig .config
 # 关键：defconfig 默认开 DBus，必须彻底删除，否则缺 dbus.h 编译失败
 sed -i '/DBUS/d' .config
+# 关掉 SAE/DPP/EAP-pwd 等依赖椭圆曲线(ECC)的功能，internal TLS 没编 ECC 会 undefined reference
+sed -i -E '/^CONFIG_(SAE|DPP|EAP_PWD|EAP_TEAP|WPA3)/d' .config
 cat >> .config <<'EOF'
 CONFIG_DRIVER_NL80211=y
 CONFIG_DRIVER_WEXT=n
