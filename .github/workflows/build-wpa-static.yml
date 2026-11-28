@@ -27,12 +27,22 @@ jobs:
           apt-get update -qq
           apt-get install -y -qq \
             build-essential gcc-arm-linux-gnueabihf binutils-arm-linux-gnueabihf \
-            libssl-dev pkg-config curl ca-certificates file
+            libssl-dev pkg-config curl ca-certificates file automake autoconf libtool bison flex
 
       - name: 编译静态 wpa_supplicant
         run: bash scripts/build_wpa_static.sh
 
+      - name: 上传编译日志（成功失败都传，便于诊断）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wpa-build-log
+          path: out_wpa/build.log
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: 发布 Release（公开仓库可匿名下载）
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: wpa-static-latest
