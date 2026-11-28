@@ -4,9 +4,10 @@
 set -o pipefail
 SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
 exec > >(tee -a build.log) 2>&1
-trap 'echo "```" >> "$SUMMARY"' EXIT
-echo "## wpa_supplicant 编译日志" > "$SUMMARY"
-echo "```" >> "$SUMMARY"
+FENCE=$(printf '\140\140\140')
+trap "printf '%s\n' '$FENCE' >> '$SUMMARY'" EXIT
+printf '%s\n' '## wpa_supplicant 编译日志' > "$SUMMARY"
+printf '%s\n' "$FENCE" >> "$SUMMARY"
 
 CC=arm-linux-gnueabihf-gcc
 PREFIX=/opt/arm-static
