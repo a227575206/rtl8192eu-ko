@@ -65,7 +65,7 @@ echo "=== 4. 编译 ==="
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PKG_CONFIG_PATH"
 export CFLAGS="-O2 -march=armv7-a -I$PREFIX/include -I$PREFIX/include/libnl3"
 export LDFLAGS="-static -static-libgcc -L$PREFIX/lib"
-export LIBS="-lnl-3 -lnl-genl-3"
+export LIBS="-lnl-3 -lnl-genl-3 -lpthread -lm -ldl"
 make CC=$CC -j4 > make.log 2>&1
 RC=$?
 echo "MAKE_RC=$RC"
