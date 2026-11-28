@@ -2,12 +2,6 @@
 # 编译 wpa_supplicant armv7，替换 E900V22D 上崩溃的 Android HIDL 版
 # 关键诊断：所有输出同时写进 $GITHUB_STEP_SUMMARY，失败也能在 Actions 页面直接看到
 set -o pipefail
-SUMMARY=${GITHUB_STEP_SUMMARY:-/dev/null}
-exec > >(tee -a build.log) 2>&1
-FENCE=$(printf '\140\140\140')
-trap "printf '%s\n' '$FENCE' >> '$SUMMARY'" EXIT
-printf '%s\n' '## wpa_supplicant 编译日志' > "$SUMMARY"
-printf '%s\n' "$FENCE" >> "$SUMMARY"
 
 CC=arm-linux-gnueabihf-gcc
 PREFIX=/opt/arm-static
@@ -30,8 +24,8 @@ if [ "$DL_OK" = 1 ]; then
   ./configure --host=arm-linux-gnueabihf --prefix="$PREFIX" --enable-static --disable-shared --disable-python > cfg.log 2>&1
   echo "CFG_RC=$?"; tail -20 cfg.log
   echo "=== make libnl ==="
-  make -j4 > mk.log 2>&1; echo "MAKE_RC=$?"; tail -20 mk.log
-  make install > inst.log 2>&1; echo "INST_RC=$?"; tail -10 inst.log
+  make -j4 > mk.log 2>&1; echo "MAKE_RC=$?"; tail -30 mk.log
+  make install > inst.log 2>&1; echo "INST_RC=$?"; tail -15 inst.log
   cd ..
 fi
 echo "LIBNL_A=$(ls -l $PREFIX/lib/libnl-3.a 2>&1)"

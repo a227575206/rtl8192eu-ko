@@ -32,6 +32,16 @@ jobs:
       - name: 编译静态 wpa_supplicant
         run: bash scripts/build_wpa_static.sh
 
+      - name: 把日志塞进 Summary（无需权限即可查看）
+        if: always()
+        run: |
+          {
+            echo '## 完整编译日志'
+            echo '```'
+            cat out_wpa/build.log 2>/dev/null || echo 'build.log 不存在'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: 上传编译日志（成功失败都传，便于诊断）
         if: always()
         uses: actions/upload-artifact@v4
