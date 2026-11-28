@@ -22,9 +22,9 @@ if [ "$DL_OK" = 1 ]; then
   cd libnl-3.5.0
   echo "=== configure libnl ==="
   ./configure --host=arm-linux-gnueabihf --prefix="$PREFIX" --enable-static --disable-shared --disable-python > cfg.log 2>&1
-  echo "CFG_RC=$?"; tail -20 cfg.log
+  echo "CFG_RC=$?"; tail -20 cfg.log; grep -iE "error|not found|cannot" cfg.log | tail -8 | while read -r L; do echo "::error::LIBNL_CFG $L"; done
   echo "=== make libnl ==="
-  make -j4 > mk.log 2>&1; echo "MAKE_RC=$?"; tail -30 mk.log
+  make -j4 > mk.log 2>&1; echo "MAKE_RC=$?"; tail -30 mk.log; grep -iE "error|undefined|cannot" mk.log | tail -8 | while read -r L; do echo "::error::LIBNL_MAKE $L"; done
   make install > inst.log 2>&1; echo "INST_RC=$?"; tail -15 inst.log
   cd ..
 fi
@@ -63,6 +63,7 @@ make CC=$CC -j4 > make.log 2>&1
 RC=$?
 echo "MAKE_RC=$RC"
 tail -60 make.log
+grep -iE "error|undefined reference|No such file|cannot find|fatal error" make.log | tail -12 | while read -r L; do echo "::error::WPA_MAKE $L"; done
 
 echo "=== 5. 校验 ==="
 if [ -f wpa_supplicant ]; then
